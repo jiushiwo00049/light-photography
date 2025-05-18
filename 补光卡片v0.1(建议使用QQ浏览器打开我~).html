@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>补光卡片</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Microsoft YaHei', sans-serif;
+            transition: background-color 0.3s;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-color: #ffffff;
+            overflow: hidden;
+        }
+        
+        .controls {
+            padding: 15px;
+            background-color: rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            align-items: center;
+        }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            min-width: 200px;
+        }
+        
+        label {
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        input[type="range"] {
+            flex-grow: 1;
+        }
+        
+        .value-display {
+            min-width: 40px;
+            text-align: center;
+        }
+        
+        .light-area {
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            user-select: none;
+            position: relative;
+        }
+        
+        .hidden {
+            display: none !important;
+        }
+        
+        .exit-fullscreen {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            z-index: 100;
+            opacity: 0.3;
+            transition: opacity 0.3s;
+        }
+        
+        .exit-fullscreen:hover {
+            opacity: 1;
+        }
+        
+        .camera-container {
+            position: absolute;
+            width: 210px;
+            height: 280px;
+            background-color: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+            z-index: 10;
+        }
+        
+        #video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* 添加此行实现镜像效果 */
+        }
+        
+        #photo {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .camera-controls {
+            position: absolute;
+            bottom: 10px;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: center;
+            z-index: 20;
+        }
+        
+        .camera-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            text-align: center;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            max-width: 80%;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls" id="controls">
+        <div class="control-group">
+            <label for="brightness">亮度</label>
+            <div class="slider-container">
+                <input type="range" id="brightness" min="0" max="100" value="100">
+                <span class="value-display" id="brightness-value">100%</span>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <label for="red">R值</label>
+            <div class="slider-container">
+                <input type="range" id="red" min="0" max="255" value="255">
+                <span class="value-display" id="red-value">255</span>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <label for="green">G值</label>
+            <div class="slider-container">
+                <input type="range" id="green" min="0" max="255" value="70">
+                <span class="value-display" id="green-value">70</span>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <label for="blue">B值</label>
+            <div class="slider-container">
+                <input type="range" id="blue" min="0" max="255" value="255">
+                <span class="value-display" id="blue-value">255</span>
+            </div>
+        </div>
+        
+        <button class="fullscreen-btn" id="fullscreen-btn">全屏模式</button>
+        <button class="camera-btn" id="camera-btn">打开摄像头</button>
+    </div>
+    
+    <div class="light-area" id="light-area">
+        <p id="light-message">点击"全屏模式"按钮以获得最佳补光效果。
+            <br>提肤色 R=5 G=253 B=254
+            <br>冷白皮 R=61 G=134 B=246
+            <br>氛围灯 R=220 G=63 B=246
+            <br>水光感 R=254 G=237 B=24 
+            <br>粉嫩感 R=248 G=184 B=201
+            <br>清透感 R=254 G=254 B=254
+            <br>本地运行，不上传网络，请放心使用~</p>
+        
+        <div class="camera-container hidden" id="camera-container">
+            <video id="video" autoplay playsinline></video>
+            <canvas id="canvas" class="hidden"></canvas>
+            <img id="photo" class="hidden">
+            <div class="camera-controls">
+                <button class="capture-btn" id="capture-btn">拍照</button>
+                <!-- 新增返回按钮 -->
+                <button class="return-btn hidden" id="return-btn">返回</button>
+            </div>
+            <div class="camera-message hidden" id="camera-message"></div>
+        </div>
+    </div>
+    
+    <button class="exit-fullscreen hidden" id="exit-fullscreen">退出全屏</button>
+    
+    <script>
+        const body = document.body;
+        const brightnessSlider = document.getElementById('brightness');
+        const brightnessValue = document.getElementById('brightness-value');
+        const redSlider = document.getElementById('red');
+        const redValue = document.getElementById('red-value');
+        const greenSlider = document.getElementById('green');
+        const greenValue = document.getElementById('green-value');
+        const blueSlider = document.getElementById('blue');
+        const blueValue = document.getElementById('blue-value');
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
+        const exitFullscreenBtn = document.getElementById('exit-fullscreen');
+        const controls = document.getElementById('controls');
+        const lightArea = document.getElementById('light-area');
+        const lightMessage = document.getElementById('light-message');
+        
+        // 摄像头相关元素
+        const cameraBtn = document.getElementById('camera-btn');
+        const cameraContainer = document.getElementById('camera-container');
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const photo = document.getElementById('photo');
+        const captureBtn = document.getElementById('capture-btn');
+        const returnBtn = document.getElementById('return-btn');
+        const cameraMessage = document.getElementById('camera-message');
+        
+        let stream = null;
+        
+        // 更新亮度
+        function updateBrightness() {
+            const brightness = brightnessSlider.value;
+            brightnessValue.textContent = `${brightness}%`;
+            updateBackgroundColor();
+        }
+        
+        // 更新RGB值
+        function updateRGB() {
+            const r = redSlider.value;
+            const g = greenSlider.value;
+            const b = blueSlider.value;
+            redValue.textContent = `${r}`;
+            greenValue.textContent = `${g}`;
+            blueValue.textContent = `${b}`;
+            updateBackgroundColor();
+        }
+        
+        // 更新背景颜色
+        function updateBackgroundColor() {
+            const brightness = brightnessSlider.value / 100;
+            const r = redSlider.value * brightness;
+            const g = greenSlider.value * brightness;
+            const b = blueSlider.value * brightness;
+            
+            body.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+        }
+        
+        // 进入全屏模式
+        function enterFullscreen() {
+            if (document.documentElement.requestFullscreen) {
+                document.documentElement.requestFullscreen();
+            } else if (document.documentElement.mozRequestFullScreen) {
+                document.documentElement.mozRequestFullScreen();
+            } else if (document.documentElement.webkitRequestFullscreen) {
+                document.documentElement.webkitRequestFullscreen();
+            } else if (document.documentElement.msRequestFullscreen) {
+                document.documentElement.msRequestFullscreen();
+            }
+            
+            controls.classList.add('hidden');
+            lightMessage.classList.add('hidden');
+            exitFullscreenBtn.classList.remove('hidden');
+            
+            // 强制设置背景颜色
+            updateBackgroundColor();
+        }
+        
+        // 退出全屏模式
+        function exitFullscreen() {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.mozCancelFullScreen) {
+                document.mozCancelFullScreen();
+            } else if (document.webkitExitFullscreen) {
+                document.webkitExitFullscreen();
+            } else if (document.msExitFullscreen) {
+                document.msExitFullscreen();
+            }
+            
+            controls.classList.remove('hidden');
+            lightMessage.classList.remove('hidden');
+            exitFullscreenBtn.classList.add('hidden');
+            
+            // 强制设置背景颜色
+            updateBackgroundColor();
+        }
+        
+        // 打开摄像头
+        async function openCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        facingMode: "user" 
+                    }, 
+                    audio: false 
+                });
+                
+                video.srcObject = stream;
+                cameraContainer.classList.remove('hidden');
+                photo.classList.add('hidden');
+                video.classList.remove('hidden');
+                cameraBtn.textContent = '关闭摄像头';
+                lightMessage.classList.add('hidden');
+                
+                // 设置canvas大小与视频流一致
+                video.onloadedmetadata = () => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                };
+                
+            } catch (err) {
+                console.error("摄像头访问错误:", err);
+                showCameraMessage("无法访问摄像头，请确保已授予权限。");
+            }
+        }
+        
+        // 关闭摄像头
+        function closeCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            
+            video.srcObject = null;
+            cameraContainer.classList.add('hidden');
+            cameraBtn.textContent = '打开摄像头';
+            lightMessage.classList.remove('hidden');
+        }
+        
+        // 拍照并保存
+        function capturePhoto() {
+            const context = canvas.getContext('2d');
+            
+            // 在canvas上绘制视频当前帧，水平翻转图像
+            context.save();
+            context.scale(-1, 1);
+            context.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+            context.restore();
+            
+            // 将canvas内容转换为图片URL
+            const dataUrl = canvas.toDataURL('image/png');
+            
+            // 显示拍摄的照片
+            photo.src = dataUrl;
+            photo.classList.remove('hidden');
+            video.classList.add('hidden');
+            captureBtn.classList.add('hidden');
+            returnBtn.classList.remove('hidden');
+            
+            // 自动保存图片
+            //const link = document.createElement('a');
+            //link.href = dataUrl;
+            //link.download = 'photo.png';
+            //link.click();
+        }
+        
+        // 返回视频流状态
+        function returnToVideo() {
+            photo.classList.add('hidden');
+            video.classList.remove('hidden');
+            captureBtn.classList.remove('hidden');
+            returnBtn.classList.add('hidden');
+        }
+        
+        // 显示摄像头相关消息
+        function showCameraMessage(message) {
+            cameraMessage.textContent = message;
+            cameraMessage.classList.remove('hidden');
+            
+            setTimeout(() => {
+                cameraMessage.classList.add('hidden');
+            }, 3000);
+        }
+        
+        // 切换摄像头状态
+        function toggleCamera() {
+            if (stream) {
+                closeCamera();
+            } else {
+                openCamera();
+            }
+        }
+        
+        // 事件监听
+        brightnessSlider.addEventListener('input', updateBrightness);
+        redSlider.addEventListener('input', updateRGB);
+        greenSlider.addEventListener('input', updateRGB);
+        blueSlider.addEventListener('input', updateRGB);
+        fullscreenBtn.addEventListener('click', enterFullscreen);
+        exitFullscreenBtn.addEventListener('click', exitFullscreen);
+        cameraBtn.addEventListener('click', toggleCamera);
+        captureBtn.addEventListener('click', capturePhoto);
+        returnBtn.addEventListener('click', returnToVideo);
+        
+        // 监听全屏变化
+        document.addEventListener('fullscreenchange', function() {
+            if (!document.fullscreenElement) {
+                controls.classList.remove('hidden');
+                lightMessage.classList.remove('hidden');
+                exitFullscreenBtn.classList.add('hidden');
+                
+                // 强制设置背景颜色
+                updateBackgroundColor();
+            }
+        });
+        
+        // 初始化
+        updateBrightness();
+    </script>
+</body>
+</html>
+改进建议联系qq:595395191
